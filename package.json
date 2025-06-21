@@ -1,0 +1,33 @@
+{
+  "name": "offline-platform",
+  "version": "1.0.0",
+  "description": "National Internet Platform",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "server": "node server/index.js",
+    "client": "npm start --prefix client",
+    "client-install": "npm install --prefix client",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "npm run client-install && npm run build --prefix client",
+    "install-all": "npm install && npm run client-install",
+    "heroku-postbuild": "NPM_CONFIG_PRODUCTION=true npm run client-install && npm run build --prefix client"
+  },
+  "keywords": [
+    "chat",
+    "platform",
+    "messaging"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "concurrently": "^8.0.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0",
+    "socket.io": "^4.6.1",
+    "sqlite3": "^5.1.6"
+  }
+} 
