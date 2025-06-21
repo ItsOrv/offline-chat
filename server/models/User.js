@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 class User {
   static findById(id) {
     return new Promise((resolve, reject) => {
-      db.get('SELECT * FROM users WHERE id = ?', [id], (err, row) => {
+      db.get('SELECT * FROM users WHERE id = ? AND isDeleted = 0', [id], (err, row) => {
         if (err) return reject(err);
         resolve(row);
       });
@@ -13,7 +13,7 @@ class User {
 
   static findByUsername(username) {
     return new Promise((resolve, reject) => {
-      db.get('SELECT * FROM users WHERE username = ?', [username], (err, row) => {
+      db.get('SELECT * FROM users WHERE username = ? AND isDeleted = 0', [username], (err, row) => {
         if (err) return reject(err);
         resolve(row);
       });
@@ -22,7 +22,7 @@ class User {
 
   static getAll() {
     return new Promise((resolve, reject) => {
-      db.all('SELECT id, username, isAdmin, lastSeen, createdAt, updatedAt FROM users', (err, rows) => {
+      db.all('SELECT id, username, isAdmin, lastSeen, createdAt, updatedAt FROM users WHERE isDeleted = 0', (err, rows) => {
         if (err) return reject(err);
         resolve(rows);
       });
@@ -80,6 +80,81 @@ class User {
 
   static comparePassword(plainPassword, hashedPassword) {
     return bcrypt.compare(plainPassword, hashedPassword);
+  }
+
+  static updateUsername(id, newUsername) {
+    const now = new Date().toISOString();
+    return new Promise((resolve, reject) => {
+      // First, check if the new username is already taken by another user
+      db.get('SELECT id FROM users WHERE username = ? AND id != ? AND isDeleted = 0', [newUsername, id], (err, row) => {
+        if (err) return reject(err);
+        if (row) {
+          // Username is taken
+          const error = new Error('Username is already taken');
+          error.code = 'SQLITE_CONSTRAINT'; // Mimic a constraint error for consistency if needed
+          return reject(error);
+        }
+        // Proceed with update if username is not taken
+        db.run(
+          'UPDATE users SET username = ?, updatedAt = ? WHERE id = ? AND isDeleted = 0',
+          [newUsername, now, id],
+          function(err) {
+            if (err) return reject(err);
+            resolve(this.changes > 0);
+          }
+        );
+      });
+    });
+  }
+
+  static async updatePassword(id, newPassword) {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    const now = new Date().toISOString();
+    return new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE users SET password = ?, updatedAt = ? WHERE id = ? AND isDeleted = 0',
+        [hashedPassword, now, id],
+        function(err) {
+          if (err) return reject(err);
+          resolve(this.changes > 0);
+        }
+      );
+    });
+  }
+
+  static softDelete(id) {
+    const now = new Date().toISOString();
+    return new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE users SET isDeleted = 1, updatedAt = ? WHERE id = ? AND isDeleted = 0',
+        [now, id],
+        function(err) {
+          if (err) return reject(err);
+          resolve(this.changes > 0);
+        }
+      );
+    });
+  }
+
+  static searchByUsername(searchTerm, currentUserId) {
+    return new Promise((resolve, reject) => {
+      const query = `
+        SELECT id, username, isAdmin, lastSeen
+        FROM users
+        WHERE username LIKE ?
+          AND id != ?
+          AND isDeleted = 0
+        ORDER BY username ASC
+        LIMIT 20
+      `;
+      // Add wildcards for LIKE query
+      const term = `%${searchTerm}%`;
+      db.all(query, [term, currentUserId], (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows.map(row => ({ ...row, isAdmin: row.isAdmin === 1 })));
+      });
+    });
   }
 }
 

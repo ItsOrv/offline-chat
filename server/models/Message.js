@@ -1,27 +1,45 @@
 const db = require('../config/db');
 
 class Message {
+  // Private helper to format message row
+  static _formatMessage(row) {
+    if (!row) return null;
+
+    const formatted = {
+      ...row, // Spread all columns from m (messages table)
+      sender: {
+        id: row.sender, // This is m.sender (sender's ID)
+        username: row.senderUsername
+      }
+    };
+
+    // Remove redundant fields after nesting
+    delete formatted.senderUsername;
+
+    if (row.approvedBy) {
+      formatted.approvedBy = {
+        id: row.approvedBy, // This is m.approvedBy (approver's ID)
+        username: row.approvedByUsername
+      };
+      delete formatted.approvedByUsername;
+    } else {
+      formatted.approvedBy = null; // Explicitly set to null if not approved or no approver
+      delete formatted.approvedByUsername; // Ensure it's removed
+    }
+    return formatted;
+  }
+
   static findById(id) {
     return new Promise((resolve, reject) => {
       db.get(`
         SELECT m.*, u.username as senderUsername, ua.username as approvedByUsername 
         FROM messages m
-        LEFT JOIN users u ON m.sender = u.id
+        JOIN users u ON m.sender = u.id
         LEFT JOIN users ua ON m.approvedBy = ua.id
         WHERE m.id = ?
       `, [id], (err, row) => {
         if (err) return reject(err);
-        if (row) {
-          // Format message to include sender object
-          row = {
-            ...row,
-            sender: {
-              id: row.sender,
-              username: row.senderUsername
-            }
-          };
-        }
-        resolve(row);
+        resolve(Message._formatMessage(row));
       });
     });
   }
@@ -33,7 +51,7 @@ class Message {
       let query = `
         SELECT m.*, u.username as senderUsername, ua.username as approvedByUsername 
         FROM messages m
-        LEFT JOIN users u ON m.sender = u.id
+        JOIN users u ON m.sender = u.id
         LEFT JOIN users ua ON m.approvedBy = ua.id
       `;
       
@@ -49,17 +67,7 @@ class Message {
       
       db.all(query, params, (err, rows) => {
         if (err) return reject(err);
-        
-        // Format messages to include sender object
-        const formattedRows = rows.map(row => ({
-          ...row,
-          sender: {
-            id: row.sender,
-            username: row.senderUsername
-          }
-        }));
-        
-        resolve(formattedRows);
+        resolve(rows.map(Message._formatMessage));
       });
     });
   }
@@ -76,26 +84,15 @@ class Message {
           if (err) return reject(err);
           
           // Get the newly created message with sender info
+          // approvedBy will be null, so approvedByUsername will also be null
           db.get(`
             SELECT m.*, u.username as senderUsername 
             FROM messages m
-            LEFT JOIN users u ON m.sender = u.id
+            JOIN users u ON m.sender = u.id
             WHERE m.id = ?
           `, [this.lastID], (err, row) => {
             if (err) return reject(err);
-            
-            // Format message to include sender object
-            if (row) {
-              row = {
-                ...row,
-                sender: {
-                  id: row.sender,
-                  username: row.senderUsername
-                }
-              };
-            }
-            
-            resolve(row);
+            resolve(Message._formatMessage(row));
           });
         }
       );
@@ -117,28 +114,12 @@ class Message {
           db.get(`
             SELECT m.*, u.username as senderUsername, ua.username as approvedByUsername 
             FROM messages m
-            LEFT JOIN users u ON m.sender = u.id
+            JOIN users u ON m.sender = u.id
             LEFT JOIN users ua ON m.approvedBy = ua.id
             WHERE m.id = ?
           `, [id], (err, row) => {
             if (err) return reject(err);
-            
-            // Format message to include sender object
-            if (row) {
-              row = {
-                ...row,
-                sender: {
-                  id: row.sender,
-                  username: row.senderUsername
-                },
-                approvedBy: {
-                  id: row.approvedBy,
-                  username: row.approvedByUsername
-                }
-              };
-            }
-            
-            resolve(row);
+            resolve(Message._formatMessage(row));
           });
         }
       );

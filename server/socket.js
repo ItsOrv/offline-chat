@@ -2,9 +2,12 @@ const Message = require('./models/Message');
 const PrivateMessage = require('./models/PrivateMessage');
 const User = require('./models/User');
 
-module.exports = (io) => {
-  // Store online users
-  const onlineUsers = new Map();
+// Store online users - Export this map
+const onlineUsers = new Map();
+
+module.exports.onlineUsers = onlineUsers;
+
+module.exports.initSocket = (io) => {
   // Track messages being processed to prevent duplicates
   const processingMessages = new Set();
 
@@ -14,29 +17,40 @@ module.exports = (io) => {
     // User joins with their ID
     socket.on('user_connected', async (userId) => {
       try {
-        // Add user to online users map
-        onlineUsers.set(userId.toString(), socket.id);
-        
-        // Get all online users
-        const onlineUserIds = Array.from(onlineUsers.keys());
-        const users = [];
-        
-        // Fetch user info for each online user
-        for (const id of onlineUserIds) {
-          const user = await User.findById(id);
-          if (user) {
-            const { password, ...userWithoutPassword } = user;
-            users.push({
-              ...userWithoutPassword,
-              isAdmin: user.isAdmin === 1
-            });
-          }
+        if (!userId) {
+          console.error('User connected with undefined userId', socket.id);
+          return;
         }
-        
-        // Notify all connected clients about online users
-        io.emit('online_users', users);
+
+        // Fetch minimal user details
+        const user = await User.findById(userId); // findById already filters isDeleted
+        if (user) {
+          socket.userId = user.id.toString(); // Store userId on socket
+          socket.isAdmin = user.isAdmin === 1; // Store isAdmin on socket
+
+          // Add/update user in onlineUsers map
+          onlineUsers.set(user.id.toString(), {
+            socketId: socket.id,
+            username: user.username,
+            isAdmin: socket.isAdmin,
+            id: user.id // also store id for convenience
+          });
+
+          // Prepare list of online users for emission
+          const usersForClient = Array.from(onlineUsers.values()).map(u => ({
+            id: u.id,
+            username: u.username,
+            isAdmin: u.isAdmin
+          }));
+
+          // Notify all connected clients about online users
+          io.emit('online_users', usersForClient);
+        } else {
+          console.warn(`User with ID ${userId} not found or is deleted, for socket ${socket.id}`);
+          // Optionally, disconnect or send an error to this specific socket
+        }
       } catch (error) {
-        console.error('Error handling user connection:', error);
+        console.error('Error handling user_connected event:', error);
       }
     });
 
@@ -49,18 +63,11 @@ module.exports = (io) => {
           content: message.content
         });
         
-        // Get admin socket IDs
-        const adminSockets = [];
-        for (const [userId, socketId] of onlineUsers.entries()) {
-          const user = await User.findById(userId);
-          if (user && user.isAdmin === 1) {
-            adminSockets.push(socketId);
+        // Notify online admins about new message pending approval
+        onlineUsers.forEach(adminUser => {
+          if (adminUser.isAdmin && adminUser.socketId) {
+            io.to(adminUser.socketId).emit('pending_approval', newMessage);
           }
-        }
-        
-        // Notify admins about new message pending approval
-        adminSockets.forEach(socketId => {
-          io.to(socketId).emit('pending_approval', newMessage);
         });
         
         // Acknowledge the sender that message was sent for approval
@@ -83,29 +90,29 @@ module.exports = (io) => {
         }
         
         // Save private message to database
-        const newPrivateMessage = await PrivateMessage.create({
+        const newPrivateMessage = await PrivateMessage.create({ // This now returns the formatted message
           sender: message.sender,
           recipient: message.recipient,
           content: message.content
         });
+
+        if (!newPrivateMessage) {
+            // Handle case where message creation failed (e.g., model returned null)
+            console.error('Failed to create private message in socket handler.');
+            return socket.emit('message_error', { error: 'Failed to send message' });
+        }
         
-        // Enhance message with user info
-        const enhancedMessage = {
-          ...newPrivateMessage,
-          senderId: message.sender,
-          recipientId: message.recipient,
-          senderUsername: sender.username,
-          recipientUsername: recipient.username
-        };
+        // newPrivateMessage is already in the desired format:
+        // { id, content, ..., sender: { id, username }, recipient: { id, username } }
         
         // Send to recipient if online
-        const recipientSocketId = onlineUsers.get(message.recipient.toString());
+        const recipientSocketId = onlineUsers.get(message.recipient.toString()); // message.recipient is recipientId
         if (recipientSocketId) {
-          io.to(recipientSocketId).emit('receive_private_message', enhancedMessage);
+          io.to(recipientSocketId).emit('receive_private_message', newPrivateMessage);
         }
         
         // Confirm message sent to sender
-        socket.emit('private_message_sent', enhancedMessage);
+        socket.emit('private_message_sent', newPrivateMessage);
       } catch (error) {
         console.error('Error sending private message:', error);
         socket.emit('message_error', { error: 'Error sending private message' });
@@ -115,127 +122,95 @@ module.exports = (io) => {
     // Admin approves message
     socket.on('approve_message', async (messageId) => {
       try {
-        // Check if message is already being processed
-        if (processingMessages.has(messageId)) {
-          return; // Skip if already processing this message
+        if (!socket.userId || !socket.isAdmin) {
+          return socket.emit('message_error', { error: 'Unauthorized: Not an admin or user ID missing on socket.' });
         }
-        
-        // Add to processing set
+
+        if (processingMessages.has(messageId)) {
+          return;
+        }
         processingMessages.add(messageId);
         
-        // Get user ID from socket
-        let adminId = null;
-        for (const [userId, socketId] of onlineUsers.entries()) {
-          if (socketId === socket.id) {
-            adminId = userId;
-            break;
-          }
-        }
+        const adminId = socket.userId; // Use userId from socket
         
-        if (!adminId) {
-          processingMessages.delete(messageId);
-          return socket.emit('message_error', { error: 'Unauthorized access' });
-        }
-        
-        // Approve message
         const message = await Message.approve(messageId, adminId);
         
         if (message) {
-          // Broadcast approved message to all users
-          io.emit('approved_message', message);
+          io.emit('approved_message', message); // Broadcast to all
           
-          // Notify all admins to remove from pending
-          for (const [userId, socketId] of onlineUsers.entries()) {
-            const user = await User.findById(userId);
-            if (user && user.isAdmin === 1) {
-              io.to(socketId).emit('message_rejected', messageId);
+          // Notify all online admins to remove from their pending lists
+          onlineUsers.forEach(adminUser => {
+            if (adminUser.isAdmin && adminUser.socketId) {
+              io.to(adminUser.socketId).emit('message_approved_admin_notification', messageId); // More specific event
             }
-          }
+          });
         } else {
-          // Message not found or already approved
-          socket.emit('message_error', { error: 'Message not found or already approved' });
+          socket.emit('message_error', { error: 'Message not found, already approved, or approval failed.' });
         }
-        
-        // Remove from processing set after a delay to prevent race conditions
-        setTimeout(() => {
-          processingMessages.delete(messageId);
-        }, 1000);
       } catch (error) {
-        processingMessages.delete(messageId);
         console.error('Error approving message:', error);
-        socket.emit('message_error', { error: 'Error approving message' });
+        socket.emit('message_error', { error: 'Server error while approving message.' });
+      } finally {
+        processingMessages.delete(messageId); // Ensure cleanup
       }
     });
 
     // Admin rejects message
     socket.on('reject_message', async (messageId) => {
       try {
-        // Check if message is already being processed
+        if (!socket.userId || !socket.isAdmin) {
+          return socket.emit('message_error', { error: 'Unauthorized: Not an admin or user ID missing on socket.' });
+        }
+
         if (processingMessages.has(messageId)) {
-          return; // Skip if already processing this message
+          return;
         }
-        
-        // Add to processing set
         processingMessages.add(messageId);
+
+        // No need to fetch admin User object again, socket.isAdmin is source of truth here for the connected socket
         
-        // Get user ID for verification
-        let adminId = null;
-        for (const [userId, socketId] of onlineUsers.entries()) {
-          if (socketId === socket.id) {
-            adminId = userId;
-            break;
-          }
-        }
+        const result = await Message.reject(messageId); // Message.reject deletes the message
         
-        if (!adminId) {
-          processingMessages.delete(messageId);
-          return socket.emit('message_error', { error: 'Unauthorized access' });
-        }
-        
-        // Verify user is an admin
-        const admin = await User.findById(adminId);
-        if (!admin || admin.isAdmin !== 1) {
-          processingMessages.delete(messageId);
-          return socket.emit('message_error', { error: 'Unauthorized access' });
-        }
-        
-        const result = await Message.reject(messageId);
         if (result) {
-          // Notify all admins to remove from pending
-          for (const [userId, socketId] of onlineUsers.entries()) {
-            const user = await User.findById(userId);
-            if (user && user.isAdmin === 1) {
-              io.to(socketId).emit('message_rejected', messageId);
+          // Notify all online admins to remove from their pending lists
+          onlineUsers.forEach(adminUser => {
+            if (adminUser.isAdmin && adminUser.socketId) {
+              io.to(adminUser.socketId).emit('message_rejected_admin_notification', messageId); // More specific event
             }
-          }
+          });
+           // Optionally, notify the original sender if they are online
+           // This would require finding the original message to get senderId,
+           // or having senderId as part of the reject_message payload.
         } else {
-          socket.emit('message_error', { error: 'Message not found or already processed' });
+          socket.emit('message_error', { error: 'Message not found, already processed, or rejection failed.' });
         }
-        
-        // Remove from processing set after a delay to prevent race conditions
-        setTimeout(() => {
-          processingMessages.delete(messageId);
-        }, 1000);
       } catch (error) {
-        processingMessages.delete(messageId);
         console.error('Error rejecting message:', error);
-        socket.emit('message_error', { error: 'Error rejecting message' });
+        socket.emit('message_error', { error: 'Server error while rejecting message.' });
+      } finally {
+        processingMessages.delete(messageId); // Ensure cleanup
       }
     });
 
     // Handle disconnection
     socket.on('disconnect', () => {
-      // Find and remove the disconnected user
-      for (const [userId, socketId] of onlineUsers.entries()) {
-        if (socketId === socket.id) {
-          onlineUsers.delete(userId);
-          break;
-        }
+      if (socket.userId) {
+        onlineUsers.delete(socket.userId);
+
+        // Prepare updated list of online users for emission
+        const usersForClient = Array.from(onlineUsers.values()).map(u => ({
+          id: u.id,
+          username: u.username,
+          isAdmin: u.isAdmin
+        }));
+
+        io.emit('online_users', usersForClient); // Emit the full updated list
+        // Alternatively, emit just the disconnected userId: io.emit('user_disconnected', socket.userId);
+        // Emitting the full list is simpler for clients to manage state.
+        console.log('User disconnected:', socket.userId, socket.id);
+      } else {
+        console.log('A socket disconnected without a userId:', socket.id);
       }
-      
-      // Update online users list for all clients
-      io.emit('user_disconnected', socket.id);
-      console.log('User disconnected:', socket.id);
     });
   });
 }; 

@@ -13,7 +13,20 @@ class PrivateMessage {
         WHERE pm.id = ?
       `, [id], (err, row) => {
         if (err) return reject(err);
-        resolve(row);
+        if (row) {
+          const { sender, senderUsername, recipient, recipientUsername, ...messageData } = row;
+          // Note: In this specific query, 'sender' and 'recipient' are already the IDs from pm.sender and pm.recipient.
+          // So we rename them in the SELECT to avoid confusion if we were to select s.id as senderId etc.
+          // For consistency, we'll use the field names as they come from the pm table directly for IDs.
+          resolve({
+            ...messageData,
+            id: row.id, // ensure id is present
+            sender: { id: row.sender, username: senderUsername },
+            recipient: { id: row.recipient, username: recipientUsername }
+          });
+        } else {
+          resolve(null);
+        }
       });
     });
   }
@@ -31,7 +44,16 @@ class PrivateMessage {
         ORDER BY pm.createdAt DESC LIMIT ?
       `, [user1Id, user2Id, user2Id, user1Id, limit], (err, rows) => {
         if (err) return reject(err);
-        resolve(rows);
+        // Format messages
+        const formattedRows = rows.map(row => {
+          const { sender, senderUsername, recipient, recipientUsername, ...messageData } = row;
+          return {
+            ...messageData, // id is already part of ...messageData from pm.*
+            sender: { id: row.sender, username: senderUsername }, // row.sender is the ID from pm.sender
+            recipient: { id: row.recipient, username: recipientUsername } // row.recipient is the ID from pm.recipient
+          };
+        });
+        resolve(formattedRows);
       });
     });
   }
@@ -49,7 +71,16 @@ class PrivateMessage {
         ORDER BY pm.createdAt DESC LIMIT ?
       `, [userId, userId, limit], (err, rows) => {
         if (err) return reject(err);
-        resolve(rows);
+        // Format messages
+        const formattedRows = rows.map(row => {
+          const { sender, senderUsername, recipient, recipientUsername, ...messageData } = row;
+          return {
+            ...messageData,
+            sender: { id: row.sender, username: senderUsername },
+            recipient: { id: row.recipient, username: recipientUsername }
+          };
+        });
+        resolve(formattedRows);
       });
     });
   }
@@ -116,15 +147,24 @@ class PrivateMessage {
           // Get the newly created message with sender and recipient info
           db.get(`
             SELECT pm.*, 
-                   s.username as senderUsername, 
-                   r.username as recipientUsername 
+                   s.id as senderId, s.username as senderUsername,
+                   r.id as recipientId, r.username as recipientUsername
             FROM privateMessages pm
             JOIN users s ON pm.sender = s.id
             JOIN users r ON pm.recipient = r.id
             WHERE pm.id = ?
           `, [this.lastID], (err, row) => {
             if (err) return reject(err);
-            resolve(row);
+            if (row) {
+              const { senderId, senderUsername, recipientId, recipientUsername, ...messageData } = row;
+              resolve({
+                ...messageData,
+                sender: { id: senderId, username: senderUsername },
+                recipient: { id: recipientId, username: recipientUsername }
+              });
+            } else {
+              resolve(null);
+            }
           });
         }
       );

@@ -34,7 +34,7 @@ offline/
 To run this project, you need:
 
 - Node.js (version 14 or higher)
-- MongoDB
+- SQLite
 - npm or yarn
 
 ## Installation and Setup
@@ -57,8 +57,8 @@ Create an `.env` file in the project root directory and set the following enviro
 ```
 NODE_ENV=development
 PORT=5000
-MONGO_URI=mongodb://localhost:27017/offline-platform
-JWT_SECRET=your_jwt_secret_key
+DB_PATH=server/data/database.sqlite # Path to the SQLite database file
+JWT_SECRET=your_very_strong_and_unique_jwt_secret_key # Change this in your .env file!
 ```
 
 ### Running the Project
@@ -111,7 +111,7 @@ npm start
 ### Backend
 - Node.js
 - Express.js
-- MongoDB with Mongoose
+- SQLite for the database
 - Socket.io for real-time communication
 - JSON Web Token (JWT) for authentication
 - bcrypt for encryption

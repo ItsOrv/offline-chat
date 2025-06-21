@@ -3,18 +3,25 @@ const config = require('./config');
 const fs = require('fs');
 const path = require('path');
 
-// Create directory for database file if it doesn't exist
+// Ensure the directory for the database file exists
 const dbDir = path.dirname(config.DB_PATH);
-if (!fs.existsSync(dbDir)){
+if (!fs.existsSync(dbDir)) {
+  try {
     fs.mkdirSync(dbDir, { recursive: true });
+    console.log(`Database directory created: ${dbDir}`);
+  } catch (mkdirErr) {
+    console.error(`Error creating database directory ${dbDir}:`, mkdirErr);
+    // Exit or handle critical error appropriately if directory creation fails
+    process.exit(1);
+  }
 }
 
 // Create database connection
 const db = new sqlite3.Database(config.DB_PATH, (err) => {
   if (err) {
-    console.error('Error connecting to SQLite database:', err.message);
+    console.error(`Error connecting to SQLite database at ${config.DB_PATH}:`, err.message);
   } else {
-    console.log('Connected to SQLite database');
+    console.log(`Connected to SQLite database at ${config.DB_PATH}`);
     initializeDatabase();
   }
 });
@@ -28,6 +35,7 @@ const initializeDatabase = () => {
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       isAdmin INTEGER DEFAULT 0,
+      isDeleted INTEGER DEFAULT 0, -- Added isDeleted column
       lastSeen TEXT DEFAULT CURRENT_TIMESTAMP,
       createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
       updatedAt TEXT DEFAULT CURRENT_TIMESTAMP

@@ -12,40 +12,51 @@ const db = require('./config/db');
 
 // Import routes
 const authRoutes = require('./routes/auth');
-const messageRoutes = require('./routes/messages');
+const messageRoutesFn = require('./routes/messages'); // Changed to function
 const userRoutes = require('./routes/users');
 
 // Import socket handler
-const socketHandler = require('./socket');
+const { initSocket } = require('./socket'); // Changed import
 
 // Config
 dotenv.config();
 
-// Force production mode
-process.env.NODE_ENV = 'production';
+// Determine environment
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// CORS Configuration
+const clientOrigin = process.env.CLIENT_ORIGIN;
+const corsOptions = {
+  origin: NODE_ENV === 'development' ? '*' : clientOrigin, // Allow all in dev, specific in prod
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+if (NODE_ENV === 'production' && !clientOrigin) {
+  console.warn('WARNING: CLIENT_ORIGIN is not set in production. CORS might block frontend access.');
+  // corsOptions.origin = false; // More restrictive: blocks if not set
+}
+
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  cors: {
-    origin: '*', // Allow connections from any origin
-    methods: ['GET', 'POST']
-  }
+  cors: corsOptions // Use defined CORS options
 });
 
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions)); // Use defined CORS options
 app.use(express.json());
 
 // Log connection to database - This is already handled in the db.js file
 
+// Socket.io (initialize before routes that need io)
+initSocket(io); // Changed to initSocket
+
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/messages', messageRoutes);
+app.use('/api/messages', messageRoutesFn(io)); // Pass io to message routes
 app.use('/api/users', userRoutes);
-
-// Socket.io
-socketHandler(io);
 
 // Check if client build directory exists
 const clientBuildPath = path.join(__dirname, '../client/build');

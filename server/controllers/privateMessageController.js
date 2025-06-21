@@ -1,5 +1,6 @@
 const PrivateMessage = require('../models/PrivateMessage');
 const User = require('../models/User');
+const { onlineUsers } = require('../socket'); // Import onlineUsers
 
 // @desc    Get private messages between users
 // @route   GET /api/messages/private/:userId
@@ -42,34 +43,74 @@ exports.getPrivateMessages = async (req, res) => {
 // @desc    Send a private message to another user
 // @route   POST /api/messages/private
 // @access  Private
-exports.sendPrivateMessage = async (req, res) => {
+exports.sendPrivateMessage = async (req, res, io) => { // Added io parameter
   try {
     const { recipientId, content } = req.body;
+    const senderId = req.user.id;
+
+    if (senderId.toString() === recipientId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot send a message to yourself.',
+      });
+    }
 
     // Check if recipient exists
-    const recipient = await User.findById(recipientId);
-    if (!recipient) {
+    const recipientUser = await User.findById(recipientId);
+    if (!recipientUser) {
       return res.status(404).json({
         success: false,
         message: 'Recipient not found',
       });
     }
 
+    if (!content || content.trim() === '') {
+        return res.status(400).json({
+            success: false,
+            message: 'Message content cannot be empty.',
+        });
+    }
+
     // Create message
-    const message = await PrivateMessage.create({
-      sender: req.user.id,
+    const newMessage = await PrivateMessage.create({
+      sender: senderId,
       recipient: recipientId,
       content,
     });
 
+    // newMessage from PrivateMessage.create now includes nested sender and recipient objects
+    // { id, content, createdAt, updatedAt, sender: { id, username }, recipient: { id, username }, read, readAt }
+
+    if (!newMessage) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create message.',
+      });
+    }
+
+    // Send to recipient if online
+    // The recipientId is newMessage.recipient.id
+    const recipientSocketId = onlineUsers.get(newMessage.recipient.id.toString());
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('receive_private_message', newMessage);
+    }
+
+    // Also emit back to sender for confirmation/UI update
+    // The senderId is newMessage.sender.id
+    const senderSocketId = onlineUsers.get(newMessage.sender.id.toString());
+    if (senderSocketId) {
+        io.to(senderSocketId).emit('private_message_sent', newMessage);
+    }
+
     res.status(201).json({
       success: true,
-      message,
+      message: newMessage, // Send the full message back
     });
   } catch (error) {
+    console.error('Error in sendPrivateMessage:', error); // Log the actual error
     res.status(500).json({
       success: false,
-      message: 'Server error',
+      message: 'Server error while sending private message.',
       error: error.message,
     });
   }

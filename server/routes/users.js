@@ -16,7 +16,9 @@ router.route('/')
 // User search route (accessible to all authenticated users)
 router.get('/search/:username', protect, searchUsers);
 
-// Chat user route - accessible to all authenticated users
+// Chat user route - accessible to all authenticated users.
+// Used to fetch basic profile information (excluding password) of any user for display in chat interfaces.
+// Protected by 'protect' middleware, so only authenticated users can access it.
 router.get('/chat/:id', protect, getUserById);
 
 // Admin-only user management routes
