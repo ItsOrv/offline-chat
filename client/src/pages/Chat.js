@@ -389,6 +389,11 @@ const ChatContainer = styled.div`
   max-width: 1400px;
   margin: 0 auto;
   background-color: var(--bg-primary);
+  @media (max-width: 900px) {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+  }
 `;
 
 const ChatSidebar = styled.div`
@@ -398,6 +403,13 @@ const ChatSidebar = styled.div`
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  @media (max-width: 900px) {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    min-height: 120px;
+    order: 2;
+  }
 `;
 
 const SidebarSection = styled.div`
@@ -538,6 +550,10 @@ const ChatMain = styled.div`
   flex: 1;
   display: flex;
   flex-direction: column;
+  @media (max-width: 900px) {
+    width: 100%;
+    order: 1;
+  }
 `;
 
 const ChatHeader = styled.div`
@@ -666,4 +682,4 @@ const SendButton = styled.button`
   }
 `;
 
-export default Chat; 
+export default Chat;

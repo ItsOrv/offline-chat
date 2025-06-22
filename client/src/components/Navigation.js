@@ -68,6 +68,11 @@ const NavContainer = styled.nav`
   display: flex;
   justify-content: space-between;
   align-items: center;
+  @media (max-width: 600px) {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.5rem 1rem;
+  }
 `;
 
 const NavBrand = styled.div`
@@ -89,10 +94,20 @@ const NavLinks = styled.ul`
   list-style: none;
   margin: 0;
   padding: 0;
+  @media (max-width: 600px) {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    margin-top: 0.5rem;
+  }
 `;
 
 const NavItem = styled.li`
   margin-left: 1.5rem;
+  @media (max-width: 600px) {
+    margin-left: 0;
+    margin-bottom: 0.5rem;
+  }
   
   a {
     color: var(--text-secondary);
@@ -108,6 +123,12 @@ const NavItem = styled.li`
 const NavAuth = styled.div`
   display: flex;
   align-items: center;
+  @media (max-width: 600px) {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    margin-top: 0.5rem;
+  }
 `;
 
 const UserInfo = styled.div`
@@ -146,4 +167,4 @@ const LogoutButton = styled.button`
   }
 `;
 
-export default Navigation; 
+export default Navigation;

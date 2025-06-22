@@ -249,17 +249,29 @@ const ChatContainer = styled.div`
   height: calc(100vh - 60px);
   display: flex;
   flex-direction: column;
+  @media (max-width: 600px) {
+    max-width: 100vw;
+    height: auto;
+    min-height: 100vh;
+    padding: 0;
+  }
 `;
 
 const ChatHeader = styled.div`
   padding: 1.5rem;
   background-color: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-  
+  @media (max-width: 600px) {
+    padding: 1rem 0.5rem;
+  }
   h2 {
     margin: 0.5rem 0;
     color: var(--text-primary);
     text-align: center;
+    font-size: 1.1rem;
+    @media (max-width: 600px) {
+      font-size: 1rem;
+    }
   }
 `;
 
@@ -369,4 +381,4 @@ const SendButton = styled.button`
   }
 `;
 
-export default PrivateChat; 
+export default PrivateChat;

@@ -310,6 +310,11 @@ const Card = styled.div`
 const CardFooter = styled.div`
   margin-top: 1.5rem;
   text-align: center;
+  @media (max-width: 600px) {
+    margin-top: 1rem;
+    padding: 0 0.5rem;
+    text-align: center;
+  }
 `;
 
 const Button = styled.button`
@@ -492,4 +497,4 @@ const SearchResultItem = styled.li`
   }
 `;
 
-export default Dashboard; 
+export default Dashboard;
